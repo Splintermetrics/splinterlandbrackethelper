@@ -15,14 +15,6 @@ export async function analyzeUsername(
       Diamond: 61,
       Champ: 32,
     },
-    diagnostics: {
-  Novice: { eligible: true },
-  Bronze: { eligible: true },
-  Silver: { eligible: true },
-  Gold: { eligible: true },
-  Diamond: { eligible: false, reason: "Not enough high-level rares" },
-  Champ: { eligible: false, reason: "Insufficient epic/legendary depth" },
-},
     heatmap: [
       {
         splinter: "fire",
@@ -102,6 +94,14 @@ export async function analyzeUsername(
         },
       },
     ],
+    diagnostics: {
+      Novice: { usable: 72, scaled: 0, excluded: 0 },
+      Bronze: { usable: 68, scaled: 4, excluded: 0 },
+      Silver: { usable: 59, scaled: 11, excluded: 9 },
+      Gold: { usable: 48, scaled: 16, excluded: 20 },
+      Diamond: { usable: 29, scaled: 9, excluded: 46 },
+      Champ: { usable: 14, scaled: 5, excluded: 65 },
+    },
     recommendations: [
       "Gold is currently your strongest overall bracket.",
       "Increasing Rare and Epic depth would improve Diamond readiness.",
