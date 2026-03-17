@@ -1,162 +1,87 @@
 import type { AnalyzeResponse } from "@/types/api";
 
+type SplinterlandsCard = {
+  card_detail_id: number;
+  level: number;
+  rarity: number;
+  delegated_to?: string | null;
+};
+
 export async function analyzeUsername(
   username: string
 ): Promise<AnalyzeResponse> {
+  const res = await fetch(
+    `https://api2.splinterlands.com/cards/collection/${username}`,
+    { cache: "no-store" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch collection");
+  }
+
+  const data = await res.json();
+
+  const cards: SplinterlandsCard[] = data.cards || [];
+
+  // 🔥 Step 3 — Basic parsing (v1 logic)
+  const totalCards = cards.length;
+
+  const rarityCounts = {
+    common: 0,
+    rare: 0,
+    epic: 0,
+    legendary: 0,
+  };
+
+  cards.forEach((card) => {
+    if (card.rarity === 1) rarityCounts.common++;
+    if (card.rarity === 2) rarityCounts.rare++;
+    if (card.rarity === 3) rarityCounts.epic++;
+    if (card.rarity === 4) rarityCounts.legendary++;
+  });
+
+  // 👉 placeholder scoring (we improve next)
+  const score =
+    rarityCounts.common +
+    rarityCounts.rare * 2 +
+    rarityCounts.epic * 4 +
+    rarityCounts.legendary * 8;
+
+  // 🔥 Simple bracket guess (temporary logic)
+  let bestBracket: AnalyzeResponse["bestBracket"] = "Bronze";
+
+  if (score > 500) bestBracket = "Gold";
+  if (score > 1000) bestBracket = "Diamond";
+  if (score > 2000) bestBracket = "Champ";
+
   return {
     username,
-    bestBracket: "Gold",
-    confidence: 78,
+    bestBracket,
+    confidence: Math.min(90, Math.floor(score / 20)),
     bracketScores: {
       Novice: 20,
-      Bronze: 35,
-      Silver: 55,
-      Gold: 78,
-      Diamond: 61,
-      Champ: 32,
+      Bronze: 40,
+      Silver: 60,
+      Gold: 75,
+      Diamond: 65,
+      Champ: 30,
     },
-    heatmap: [
-      {
-        splinter: "fire",
-        scores: {
-          Novice: 10,
-          Bronze: 24,
-          Silver: 42,
-          Gold: 68,
-          Diamond: 38,
-          Champ: 12,
-        },
-      },
-      {
-        splinter: "water",
-        scores: {
-          Novice: 14,
-          Bronze: 29,
-          Silver: 51,
-          Gold: 72,
-          Diamond: 49,
-          Champ: 18,
-        },
-      },
-      {
-        splinter: "earth",
-        scores: {
-          Novice: 12,
-          Bronze: 26,
-          Silver: 48,
-          Gold: 74,
-          Diamond: 55,
-          Champ: 22,
-        },
-      },
-      {
-        splinter: "life",
-        scores: {
-          Novice: 9,
-          Bronze: 21,
-          Silver: 39,
-          Gold: 57,
-          Diamond: 33,
-          Champ: 11,
-        },
-      },
-      {
-        splinter: "death",
-        scores: {
-          Novice: 11,
-          Bronze: 25,
-          Silver: 44,
-          Gold: 63,
-          Diamond: 41,
-          Champ: 16,
-        },
-      },
-      {
-        splinter: "dragon",
-        scores: {
-          Novice: 7,
-          Bronze: 18,
-          Silver: 36,
-          Gold: 52,
-          Diamond: 34,
-          Champ: 14,
-        },
-      },
-      {
-        splinter: "neutral",
-        scores: {
-          Novice: 13,
-          Bronze: 31,
-          Silver: 53,
-          Gold: 69,
-          Diamond: 47,
-          Champ: 19,
-        },
-      },
-    ],
+    heatmap: [],
     diagnostics: {
-      Novice: { usable: 72, scaled: 0, excluded: 0 },
-      Bronze: { usable: 68, scaled: 4, excluded: 0 },
-      Silver: { usable: 59, scaled: 11, excluded: 9 },
-      Gold: { usable: 48, scaled: 16, excluded: 20 },
-      Diamond: { usable: 29, scaled: 9, excluded: 46 },
-      Champ: { usable: 14, scaled: 5, excluded: 65 },
+      Novice: { usable: 0, scaled: 0, excluded: 0 },
+      Bronze: { usable: totalCards, scaled: 0, excluded: 0 },
+      Silver: { usable: Math.floor(totalCards * 0.8), scaled: 0, excluded: 0 },
+      Gold: { usable: Math.floor(totalCards * 0.6), scaled: 0, excluded: 0 },
+      Diamond: { usable: Math.floor(totalCards * 0.4), scaled: 0, excluded: 0 },
+      Champ: { usable: Math.floor(totalCards * 0.2), scaled: 0, excluded: 0 },
     },
-    splinterInsights: [
-  {
-    splinter: "fire",
-    bestBracket: "Gold",
-    score: 68,
-    summary: "Strong Gold-ready fire lineup with decent depth.",
-    usableCards: 42,
-  },
-  {
-    splinter: "water",
-    bestBracket: "Gold",
-    score: 72,
-    summary: "Water is one of the strongest splinters in mid brackets.",
-    usableCards: 48,
-  },
-  {
-    splinter: "earth",
-    bestBracket: "Gold",
-    score: 74,
-    summary: "Earth is currently your best overall splinter.",
-    usableCards: 51,
-  },
-  {
-    splinter: "life",
-    bestBracket: "Gold",
-    score: 57,
-    summary: "Life is playable, but lacks depth for higher brackets.",
-    usableCards: 36,
-  },
-  {
-    splinter: "death",
-    bestBracket: "Gold",
-    score: 63,
-    summary: "Death is solid but would benefit from stronger rares.",
-    usableCards: 39,
-  },
-  {
-    splinter: "dragon",
-    bestBracket: "Gold",
-    score: 52,
-    summary: "Dragon is usable, but currently thinner than core splinters.",
-    usableCards: 28,
-  },
-  {
-    splinter: "neutral",
-    bestBracket: "Gold",
-    score: 69,
-    summary: "Neutral support is one of the account's biggest strengths.",
-    usableCards: 46,
-  },
-],
+    splinterInsights: [],
     recommendations: [
-      "Gold is currently your strongest overall bracket.",
-      "Increasing Rare and Epic depth would improve Diamond readiness.",
-      "Focus on Earth, Water, and Neutral first for the biggest gains.",
+      "Upgrade rare and epic cards to improve higher bracket viability.",
+    ],
+    assumptions: [
+      "This is an early scoring model based on rarity counts.",
+      "Card levels and summoners not yet fully considered.",
     ],
   };
 }
