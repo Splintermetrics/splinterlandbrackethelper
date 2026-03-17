@@ -27,5 +27,6 @@ export type AnalyzeResponse = {
   heatmap: HeatmapRow[];
   diagnostics: Record<Bracket, BracketDiagnostics>;
   splinterInsights: SplinterInsight[];
+  assumptions: string[];
   recommendations: string[];
 };
