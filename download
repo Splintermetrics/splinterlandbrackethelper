@@ -1,0 +1,39 @@
+import type { Bracket, Splinter } from "@/types/brackets";
+
+export type BracketDiagnostics = {
+  usable: number;
+  scaled: number;
+  excluded: number;
+};
+
+export type HeatmapRow = {
+  splinter: Splinter;
+  scores: Record<Bracket, number>;
+};
+
+export type SplinterInsight = {
+  splinter: Splinter;
+  bestBracket: Bracket;
+  score: number;
+  usableCards: number;
+  summary: string;
+};
+
+export type AnalyzeResponse = {
+  username: string;
+  analyzedAt: string;
+  bestBracket: Bracket;
+  confidence: number;
+  summary: string;
+  bracketScores: Record<Bracket, number>;
+  diagnostics: Record<Bracket, BracketDiagnostics>;
+  heatmap: HeatmapRow[];
+  splinterInsights: SplinterInsight[];
+  recommendations: string[];
+  totals: {
+    fetchedCards: number;
+    dedupedCards: number;
+    modernCards: number;
+  };
+  assumptions: string[];
+};

@@ -1,0 +1,22 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./lib/**/*.{ts,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        panel: "#121926",
+        panelSoft: "#182233",
+        line: "#26364d",
+        textSoft: "#9fb0ca"
+      }
+    }
+  },
+  plugins: []
+};
+
+export default config;
