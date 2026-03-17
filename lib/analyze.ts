@@ -1,87 +1,373 @@
 import type { AnalyzeResponse } from "@/types/api";
+import type { Bracket, Rarity, Splinter } from "@/types/brackets";
 
-type SplinterlandsCard = {
+type RawCollectionCard = {
   card_detail_id: number;
-  level: number;
-  rarity: number;
+  level?: number;
+  card_level?: number;
   delegated_to?: string | null;
+  xp?: number;
+  alpha_xp?: number;
 };
+
+type RawCardDetail = {
+  id: number;
+  name?: string;
+  color?: string;
+  rarity?: number | string;
+  type?: string;
+};
+
+type NormalizedCard = {
+  cardDetailId: number;
+  name: string;
+  level: number;
+  rarity: Rarity;
+  splinter: Splinter;
+};
+
+const BRACKET_ORDER: Bracket[] = [
+  "Novice",
+  "Bronze",
+  "Silver",
+  "Gold",
+  "Diamond",
+  "Champ",
+];
+
+const SPLINTER_ORDER: Splinter[] = [
+  "fire",
+  "water",
+  "earth",
+  "life",
+  "death",
+  "dragon",
+  "neutral",
+];
+
+const BRACKET_RULES: Record<
+  Bracket,
+  Record<Rarity, { min: number; max: number }>
+> = {
+  Novice: {
+    common: { min: 1, max: 1 },
+    rare: { min: 1, max: 1 },
+    epic: { min: 1, max: 1 },
+    legendary: { min: 1, max: 1 },
+  },
+  Bronze: {
+    common: { min: 1, max: 3 },
+    rare: { min: 1, max: 3 },
+    epic: { min: 1, max: 2 },
+    legendary: { min: 1, max: 1 },
+  },
+  Silver: {
+    common: { min: 2, max: 5 },
+    rare: { min: 1, max: 4 },
+    epic: { min: 1, max: 3 },
+    legendary: { min: 1, max: 2 },
+  },
+  Gold: {
+    common: { min: 4, max: 8 },
+    rare: { min: 3, max: 7 },
+    epic: { min: 2, max: 5 },
+    legendary: { min: 2, max: 3 },
+  },
+  Diamond: {
+    common: { min: 6, max: 10 },
+    rare: { min: 5, max: 8 },
+    epic: { min: 4, max: 6 },
+    legendary: { min: 2, max: 4 },
+  },
+  Champ: {
+    common: { min: 8, max: 10 },
+    rare: { min: 6, max: 8 },
+    epic: { min: 5, max: 6 },
+    legendary: { min: 3, max: 4 },
+  },
+};
+
+function normalizeSplinter(color?: string): Splinter {
+  const value = (color || "").toLowerCase();
+
+  if (value === "red" || value === "fire") return "fire";
+  if (value === "blue" || value === "water") return "water";
+  if (value === "green" || value === "earth") return "earth";
+  if (value === "white" || value === "life") return "life";
+  if (value === "black" || value === "death") return "death";
+  if (value === "gold" || value === "dragon") return "dragon";
+  return "neutral";
+}
+
+function normalizeRarity(rarity?: number | string): Rarity {
+  if (rarity === 1 || rarity === "1" || rarity === "common") return "common";
+  if (rarity === 2 || rarity === "2" || rarity === "rare") return "rare";
+  if (rarity === 3 || rarity === "3" || rarity === "epic") return "epic";
+  return "legendary";
+}
+
+function getCardLevel(card: RawCollectionCard): number {
+  if (typeof card.level === "number" && card.level > 0) return card.level;
+  if (typeof card.card_level === "number" && card.card_level > 0) {
+    return card.card_level;
+  }
+
+  // Fallback for now. Later we can derive this from BCX/XP when needed.
+  return 1;
+}
+
+function emptyResponse(username: string): AnalyzeResponse {
+  return {
+    username,
+    bestBracket: "Novice",
+    confidence: 0,
+    bracketScores: {
+      Novice: 0,
+      Bronze: 0,
+      Silver: 0,
+      Gold: 0,
+      Diamond: 0,
+      Champ: 0,
+    },
+    heatmap: SPLINTER_ORDER.map((splinter) => ({
+      splinter,
+      scores: {
+        Novice: 0,
+        Bronze: 0,
+        Silver: 0,
+        Gold: 0,
+        Diamond: 0,
+        Champ: 0,
+      },
+    })),
+    diagnostics: {
+      Novice: { usable: 0, scaled: 0, excluded: 0 },
+      Bronze: { usable: 0, scaled: 0, excluded: 0 },
+      Silver: { usable: 0, scaled: 0, excluded: 0 },
+      Gold: { usable: 0, scaled: 0, excluded: 0 },
+      Diamond: { usable: 0, scaled: 0, excluded: 0 },
+      Champ: { usable: 0, scaled: 0, excluded: 0 },
+    },
+    splinterInsights: [],
+    recommendations: ["No cards found for this player."],
+  };
+}
 
 export async function analyzeUsername(
   username: string
 ): Promise<AnalyzeResponse> {
-  const res = await fetch(
-    `https://api2.splinterlands.com/cards/collection/${username}`,
+  const collectionRes = await fetch(
+    `https://api2.splinterlands.com/cards/collection/${encodeURIComponent(
+      username
+    )}`,
     { cache: "no-store" }
   );
 
-  if (!res.ok) {
+  if (!collectionRes.ok) {
     throw new Error("Failed to fetch collection");
   }
 
-  const data = await res.json();
+  const collectionJson = await collectionRes.json();
+  const rawCards: RawCollectionCard[] = Array.isArray(collectionJson)
+    ? collectionJson
+    : Array.isArray(collectionJson.cards)
+      ? collectionJson.cards
+      : [];
 
-  const cards: SplinterlandsCard[] = data.cards || [];
-
-  // 🔥 Step 3 — Basic parsing (v1 logic)
-  const totalCards = cards.length;
-
-  const rarityCounts = {
-    common: 0,
-    rare: 0,
-    epic: 0,
-    legendary: 0,
-  };
-
-  cards.forEach((card) => {
-    if (card.rarity === 1) rarityCounts.common++;
-    if (card.rarity === 2) rarityCounts.rare++;
-    if (card.rarity === 3) rarityCounts.epic++;
-    if (card.rarity === 4) rarityCounts.legendary++;
+  const detailsRes = await fetch("https://api2.splinterlands.com/cards/get_details", {
+    next: { revalidate: 3600 },
   });
 
-  // 👉 placeholder scoring (we improve next)
-  const score =
-    rarityCounts.common +
-    rarityCounts.rare * 2 +
-    rarityCounts.epic * 4 +
-    rarityCounts.legendary * 8;
+  if (!detailsRes.ok) {
+    throw new Error("Failed to fetch card details");
+  }
 
-  // 🔥 Simple bracket guess (temporary logic)
-  let bestBracket: AnalyzeResponse["bestBracket"] = "Bronze";
+  const detailsJson = await detailsRes.json();
+  const rawDetails: RawCardDetail[] = Array.isArray(detailsJson)
+    ? detailsJson
+    : Array.isArray(detailsJson.cards)
+      ? detailsJson.cards
+      : [];
 
-  if (score > 500) bestBracket = "Gold";
-  if (score > 1000) bestBracket = "Diamond";
-  if (score > 2000) bestBracket = "Champ";
+  const detailById = new Map<number, RawCardDetail>();
+  for (const detail of rawDetails) {
+    if (typeof detail.id === "number") {
+      detailById.set(detail.id, detail);
+    }
+  }
+
+  const bestByCard = new Map<number, NormalizedCard>();
+
+  for (const rawCard of rawCards) {
+    const detail = detailById.get(rawCard.card_detail_id);
+    if (!detail) continue;
+
+    const normalized: NormalizedCard = {
+      cardDetailId: rawCard.card_detail_id,
+      name: detail.name || `Card ${rawCard.card_detail_id}`,
+      level: getCardLevel(rawCard),
+      rarity: normalizeRarity(detail.rarity),
+      splinter: normalizeSplinter(detail.color),
+    };
+
+    const existing = bestByCard.get(normalized.cardDetailId);
+    if (!existing || normalized.level > existing.level) {
+      bestByCard.set(normalized.cardDetailId, normalized);
+    }
+  }
+
+  const cards = Array.from(bestByCard.values());
+
+  if (cards.length === 0) {
+    return emptyResponse(username);
+  }
+
+  const bracketScores: Record<Bracket, number> = {
+    Novice: 0,
+    Bronze: 0,
+    Silver: 0,
+    Gold: 0,
+    Diamond: 0,
+    Champ: 0,
+  };
+
+  const diagnostics: AnalyzeResponse["diagnostics"] = {
+    Novice: { usable: 0, scaled: 0, excluded: 0 },
+    Bronze: { usable: 0, scaled: 0, excluded: 0 },
+    Silver: { usable: 0, scaled: 0, excluded: 0 },
+    Gold: { usable: 0, scaled: 0, excluded: 0 },
+    Diamond: { usable: 0, scaled: 0, excluded: 0 },
+    Champ: { usable: 0, scaled: 0, excluded: 0 },
+  };
+
+  const heatmapCounts: Record<Splinter, Record<Bracket, number>> = {
+    fire: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    water: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    earth: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    life: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    death: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    dragon: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+    neutral: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
+  };
+
+  for (const bracket of BRACKET_ORDER) {
+    for (const card of cards) {
+      const rule = BRACKET_RULES[bracket][card.rarity];
+
+      if (card.level < rule.min) {
+        diagnostics[bracket].excluded += 1;
+        continue;
+      }
+
+      const effectiveLevel = Math.min(card.level, rule.max);
+      const isScaled = card.level > rule.max;
+
+      if (isScaled) {
+        diagnostics[bracket].scaled += 1;
+      } else {
+        diagnostics[bracket].usable += 1;
+      }
+
+      const normalizedContribution =
+        (effectiveLevel - rule.min + 1) / (rule.max - rule.min + 1);
+
+      bracketScores[bracket] += normalizedContribution;
+      heatmapCounts[card.splinter][bracket] += normalizedContribution;
+    }
+
+    bracketScores[bracket] = Math.round(bracketScores[bracket] * 100) / 100;
+  }
+
+  const bestBracket = BRACKET_ORDER.reduce((best, current) =>
+    bracketScores[current] > bracketScores[best] ? current : best
+  , "Novice" as Bracket);
+
+  const bestScore = bracketScores[bestBracket];
+  const maxPossible = cards.length || 1;
+  const confidence = Math.max(
+    1,
+    Math.min(99, Math.round((bestScore / maxPossible) * 100))
+  );
+
+  const heatmap = SPLINTER_ORDER.map((splinter) => {
+    const scores = heatmapCounts[splinter];
+    return {
+      splinter,
+      scores: {
+        Novice: Math.round(scores.Novice),
+        Bronze: Math.round(scores.Bronze),
+        Silver: Math.round(scores.Silver),
+        Gold: Math.round(scores.Gold),
+        Diamond: Math.round(scores.Diamond),
+        Champ: Math.round(scores.Champ),
+      },
+    };
+  });
+
+  const splinterInsights = SPLINTER_ORDER
+    .map((splinter) => {
+      const scores = heatmapCounts[splinter];
+      const bestSplinterBracket = BRACKET_ORDER.reduce((best, current) =>
+        scores[current] > scores[best] ? current : best
+      , "Novice" as Bracket);
+
+      const usableCards = cards.filter((card) => {
+        if (card.splinter !== splinter) return false;
+        const rule = BRACKET_RULES[bestSplinterBracket][card.rarity];
+        return card.level >= rule.min;
+      }).length;
+
+      return {
+        splinter,
+        bestBracket: bestSplinterBracket,
+        score: Math.round(scores[bestSplinterBracket]),
+        usableCards,
+        summary:
+          usableCards > 0
+            ? `${usableCards} cards can play in ${bestSplinterBracket}.`
+            : `No playable cards currently qualify for ${bestSplinterBracket}.`,
+      };
+    })
+    .filter((item) => item.usableCards > 0);
+
+  const nextBracket =
+    bestBracket === "Novice"
+      ? "Bronze"
+      : bestBracket === "Bronze"
+        ? "Silver"
+        : bestBracket === "Silver"
+          ? "Gold"
+          : bestBracket === "Gold"
+            ? "Diamond"
+            : bestBracket === "Diamond"
+              ? "Champ"
+              : null;
+
+  const recommendations = [
+    `Best current bracket by real card levels: ${bestBracket}.`,
+    nextBracket
+      ? `${diagnostics[nextBracket].excluded} cards are below the minimum for ${nextBracket}.`
+      : "You are already at the highest bracket tier.",
+    splinterInsights.length > 0
+      ? `${splinterInsights[0].splinter} is currently one of your stronger splinters.`
+      : "No splinter insights are available yet.",
+  ];
 
   return {
     username,
     bestBracket,
-    confidence: Math.min(90, Math.floor(score / 20)),
+    confidence,
     bracketScores: {
-      Novice: 20,
-      Bronze: 40,
-      Silver: 60,
-      Gold: 75,
-      Diamond: 65,
-      Champ: 30,
+      Novice: Math.round(bracketScores.Novice),
+      Bronze: Math.round(bracketScores.Bronze),
+      Silver: Math.round(bracketScores.Silver),
+      Gold: Math.round(bracketScores.Gold),
+      Diamond: Math.round(bracketScores.Diamond),
+      Champ: Math.round(bracketScores.Champ),
     },
-    heatmap: [],
-    diagnostics: {
-      Novice: { usable: 0, scaled: 0, excluded: 0 },
-      Bronze: { usable: totalCards, scaled: 0, excluded: 0 },
-      Silver: { usable: Math.floor(totalCards * 0.8), scaled: 0, excluded: 0 },
-      Gold: { usable: Math.floor(totalCards * 0.6), scaled: 0, excluded: 0 },
-      Diamond: { usable: Math.floor(totalCards * 0.4), scaled: 0, excluded: 0 },
-      Champ: { usable: Math.floor(totalCards * 0.2), scaled: 0, excluded: 0 },
-    },
-    splinterInsights: [],
-    recommendations: [
-      "Upgrade rare and epic cards to improve higher bracket viability.",
-    ],
-    assumptions: [
-      "This is an early scoring model based on rarity counts.",
-      "Card levels and summoners not yet fully considered.",
-    ],
+    heatmap,
+    diagnostics,
+    splinterInsights,
+    recommendations,
   };
 }
