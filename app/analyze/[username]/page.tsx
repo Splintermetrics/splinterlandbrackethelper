@@ -51,9 +51,9 @@ export default async function AnalyzeUserPage({
         <h2>Bracket Scores</h2>
         <ul>
           {Object.entries(data.bracketScores).map(([bracket, score]) => (
-            <li key={bracket}>
-              {bracket}: {score}
-            </li>
+  <li key={bracket}>
+    {bracket}: {Number(score)}
+  </li>
           ))}
         </ul>
 
