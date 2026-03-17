@@ -6,8 +6,9 @@ export type HeatmapRow = {
 };
 
 export type BracketDiagnostics = {
-  eligible: boolean;
-  reason?: string;
+  usable: number;
+  scaled: number;
+  excluded: number;
 };
 
 export type AnalyzeResponse = {
@@ -16,6 +17,6 @@ export type AnalyzeResponse = {
   confidence: number;
   bracketScores: Record<Bracket, number>;
   heatmap: HeatmapRow[];
-  diagnostics: Record<Bracket, BracketDiagnostics>; // 👈 ADD THIS
+  diagnostics: Record<Bracket, BracketDiagnostics>;
   recommendations: string[];
 };
