@@ -11,6 +11,13 @@ export type BracketDiagnostics = {
   excluded: number;
 };
 
+export type SplinterInsight = {
+  splinter: Splinter;
+  bestBracket: Bracket;
+  score: number;
+  summary: string;
+};
+
 export type AnalyzeResponse = {
   username: string;
   bestBracket: Bracket;
@@ -18,5 +25,6 @@ export type AnalyzeResponse = {
   bracketScores: Record<Bracket, number>;
   heatmap: HeatmapRow[];
   diagnostics: Record<Bracket, BracketDiagnostics>;
+  splinterInsights: SplinterInsight[];
   recommendations: string[];
 };
