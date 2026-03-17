@@ -15,6 +15,14 @@ export async function analyzeUsername(
       Diamond: 61,
       Champ: 32,
     },
+    diagnostics: {
+  Novice: { eligible: true },
+  Bronze: { eligible: true },
+  Silver: { eligible: true },
+  Gold: { eligible: true },
+  Diamond: { eligible: false, reason: "Not enough high-level rares" },
+  Champ: { eligible: false, reason: "Insufficient epic/legendary depth" },
+},
     heatmap: [
       {
         splinter: "fire",
