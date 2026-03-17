@@ -102,6 +102,50 @@ export async function analyzeUsername(
       Diamond: { usable: 29, scaled: 9, excluded: 46 },
       Champ: { usable: 14, scaled: 5, excluded: 65 },
     },
+    splinterInsights: [
+      {
+        splinter: "fire",
+        bestBracket: "Gold",
+        score: 68,
+        summary: "Strong Gold-ready fire lineup with decent depth.",
+      },
+      {
+        splinter: "water",
+        bestBracket: "Gold",
+        score: 72,
+        summary: "Water is one of the strongest splinters in mid brackets.",
+      },
+      {
+        splinter: "earth",
+        bestBracket: "Gold",
+        score: 74,
+        summary: "Earth is currently your best overall splinter.",
+      },
+      {
+        splinter: "life",
+        bestBracket: "Gold",
+        score: 57,
+        summary: "Life is playable, but lacks depth for higher brackets.",
+      },
+      {
+        splinter: "death",
+        bestBracket: "Gold",
+        score: 63,
+        summary: "Death is solid but would benefit from stronger rares.",
+      },
+      {
+        splinter: "dragon",
+        bestBracket: "Gold",
+        score: 52,
+        summary: "Dragon is usable, but currently thinner than core splinters.",
+      },
+      {
+        splinter: "neutral",
+        bestBracket: "Gold",
+        score: 69,
+        summary: "Neutral support is one of the account's biggest strengths.",
+      },
+    ],
     recommendations: [
       "Gold is currently your strongest overall bracket.",
       "Increasing Rare and Epic depth would improve Diamond readiness.",
