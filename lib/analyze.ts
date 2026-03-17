@@ -112,7 +112,6 @@ function getCardLevel(card: RawCollectionCard): number {
     return card.card_level;
   }
 
-  // Fallback for now. Later we can derive this from BCX/XP when needed.
   return 1;
 }
 
@@ -153,6 +152,10 @@ function emptyResponse(username: string): AnalyzeResponse {
   };
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 export async function analyzeUsername(
   username: string
 ): Promise<AnalyzeResponse> {
@@ -174,9 +177,12 @@ export async function analyzeUsername(
       ? collectionJson.cards
       : [];
 
-  const detailsRes = await fetch("https://api2.splinterlands.com/cards/get_details", {
-    next: { revalidate: 3600 },
-  });
+  const detailsRes = await fetch(
+    "https://api2.splinterlands.com/cards/get_details",
+    {
+      next: { revalidate: 3600 },
+    }
+  );
 
   if (!detailsRes.ok) {
     throw new Error("Failed to fetch card details");
@@ -240,7 +246,7 @@ export async function analyzeUsername(
     Champ: { usable: 0, scaled: 0, excluded: 0 },
   };
 
-  const heatmapCounts: Record<Splinter, Record<Bracket, number>> = {
+  const heatmapWeighted: Record<Splinter, Record<Bracket, number>> = {
     fire: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
     water: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
     earth: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
@@ -271,45 +277,66 @@ export async function analyzeUsername(
       const normalizedContribution =
         (effectiveLevel - rule.min + 1) / (rule.max - rule.min + 1);
 
-      bracketScores[bracket] += normalizedContribution;
-      heatmapCounts[card.splinter][bracket] += normalizedContribution;
+      const weightedContribution = isScaled
+        ? normalizedContribution * 0.35
+        : normalizedContribution * 1.0;
+
+      heatmapWeighted[card.splinter][bracket] += weightedContribution;
     }
 
-    bracketScores[bracket] = Math.round(bracketScores[bracket] * 100) / 100;
+    const usable = diagnostics[bracket].usable;
+    const scaled = diagnostics[bracket].scaled;
+    const excluded = diagnostics[bracket].excluded;
+    const total = usable + scaled + excluded || 1;
+
+    const fitRatio = (usable + scaled * 0.35) / total;
+    const weightedCountScore = usable * 1.0 + scaled * 0.35 - excluded * 0.5;
+
+    const finalScore = weightedCountScore * 0.7 + fitRatio * 100 * 0.3;
+    bracketScores[bracket] = Math.max(0, Math.round(finalScore));
   }
 
   const bestBracket = BRACKET_ORDER.reduce((best, current) =>
     bracketScores[current] > bracketScores[best] ? current : best
-  , "Novice" as Bracket);
+  , "Bronze" as Bracket);
 
-  const bestScore = bracketScores[bestBracket];
-  const maxPossible = cards.length || 1;
+  const bestDiagnostics = diagnostics[bestBracket];
+  const totalRelevant =
+    bestDiagnostics.usable +
+      bestDiagnostics.scaled +
+      bestDiagnostics.excluded || 1;
+
   const confidence = Math.max(
     1,
-    Math.min(99, Math.round((bestScore / maxPossible) * 100))
+    Math.min(
+      99,
+      Math.round(
+        ((bestDiagnostics.usable + bestDiagnostics.scaled * 0.35) /
+          totalRelevant) *
+          100
+      )
+    )
   );
 
-  const heatmap = SPLINTER_ORDER.map((splinter) => {
-    const scores = heatmapCounts[splinter];
-    return {
-      splinter,
-      scores: {
-        Novice: Math.round(scores.Novice),
-        Bronze: Math.round(scores.Bronze),
-        Silver: Math.round(scores.Silver),
-        Gold: Math.round(scores.Gold),
-        Diamond: Math.round(scores.Diamond),
-        Champ: Math.round(scores.Champ),
-      },
-    };
-  });
+  const heatmap = SPLINTER_ORDER.map((splinter) => ({
+    splinter,
+    scores: {
+      Novice: Math.round(heatmapWeighted[splinter].Novice),
+      Bronze: Math.round(heatmapWeighted[splinter].Bronze),
+      Silver: Math.round(heatmapWeighted[splinter].Silver),
+      Gold: Math.round(heatmapWeighted[splinter].Gold),
+      Diamond: Math.round(heatmapWeighted[splinter].Diamond),
+      Champ: Math.round(heatmapWeighted[splinter].Champ),
+    },
+  }));
 
   const splinterInsights = SPLINTER_ORDER
     .map((splinter) => {
-      const scores = heatmapCounts[splinter];
+      const scores = heatmapWeighted[splinter];
+
       const bestSplinterBracket = BRACKET_ORDER.reduce((best, current) =>
         scores[current] > scores[best] ? current : best
-      , "Novice" as Bracket);
+      , "Bronze" as Bracket);
 
       const usableCards = cards.filter((card) => {
         if (card.splinter !== splinter) return false;
@@ -328,7 +355,8 @@ export async function analyzeUsername(
             : `No playable cards currently qualify for ${bestSplinterBracket}.`,
       };
     })
-    .filter((item) => item.usableCards > 0);
+    .filter((item) => item.usableCards > 0)
+    .sort((a, b) => b.score - a.score);
 
   const nextBracket =
     bestBracket === "Novice"
@@ -344,10 +372,13 @@ export async function analyzeUsername(
               : null;
 
   const recommendations = [
-    `Best current bracket by real card levels: ${bestBracket}.`,
+    `Best current bracket by usable-card weighting: ${bestBracket}.`,
     nextBracket
-      ? `${diagnostics[nextBracket].excluded} cards are below the minimum for ${nextBracket}.`
+      ? `${diagnostics[nextBracket].excluded} cards are currently below the minimum for ${nextBracket}.`
       : "You are already at the highest bracket tier.",
+    diagnostics[bestBracket].scaled > diagnostics[bestBracket].usable
+      ? `You are somewhat overlevelled for ${bestBracket}; a higher bracket may suit your collection depth better soon.`
+      : `Your ${bestBracket} bracket has more naturally usable cards than scaled cards.`,
     splinterInsights.length > 0
       ? `${splinterInsights[0].splinter} is currently one of your stronger splinters.`
       : "No splinter insights are available yet.",
@@ -366,7 +397,38 @@ export async function analyzeUsername(
       Champ: Math.round(bracketScores.Champ),
     },
     heatmap,
-    diagnostics,
+    diagnostics: {
+      Novice: {
+        usable: diagnostics.Novice.usable,
+        scaled: diagnostics.Novice.scaled,
+        excluded: diagnostics.Novice.excluded,
+      },
+      Bronze: {
+        usable: diagnostics.Bronze.usable,
+        scaled: diagnostics.Bronze.scaled,
+        excluded: diagnostics.Bronze.excluded,
+      },
+      Silver: {
+        usable: diagnostics.Silver.usable,
+        scaled: diagnostics.Silver.scaled,
+        excluded: diagnostics.Silver.excluded,
+      },
+      Gold: {
+        usable: diagnostics.Gold.usable,
+        scaled: diagnostics.Gold.scaled,
+        excluded: diagnostics.Gold.excluded,
+      },
+      Diamond: {
+        usable: diagnostics.Diamond.usable,
+        scaled: diagnostics.Diamond.scaled,
+        excluded: diagnostics.Diamond.excluded,
+      },
+      Champ: {
+        usable: diagnostics.Champ.usable,
+        scaled: diagnostics.Champ.scaled,
+        excluded: diagnostics.Champ.excluded,
+      },
+    },
     splinterInsights,
     recommendations,
   };
