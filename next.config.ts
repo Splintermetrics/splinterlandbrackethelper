@@ -1,5 +1,5 @@
-.next
-node_modules
-.env*
-.vercel
-*.log
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {};
+
+export default nextConfig;
