@@ -16,6 +16,7 @@ export type SplinterInsight = {
   bestBracket: Bracket;
   score: number;
   summary: string;
+  usableCards: number;
 };
 
 export type AnalyzeResponse = {
