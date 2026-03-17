@@ -45,6 +45,13 @@ const SPLINTER_ORDER: Splinter[] = [
   "neutral",
 ];
 
+const RARITY_WEIGHTS: Record<Rarity, number> = {
+  common: 1.0,
+  rare: 1.15,
+  epic: 1.3,
+  legendary: 1.5,
+};
+
 const BRACKET_RULES: Record<
   Bracket,
   Record<Rarity, { min: number; max: number }>
@@ -112,6 +119,7 @@ function getCardLevel(card: RawCollectionCard): number {
     return card.card_level;
   }
 
+  // Fallback for now. Next upgrade can derive level from BCX/XP.
   return 1;
 }
 
@@ -154,6 +162,15 @@ function emptyResponse(username: string): AnalyzeResponse {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function getNextBracket(bracket: Bracket): Bracket | null {
+  if (bracket === "Novice") return "Bronze";
+  if (bracket === "Bronze") return "Silver";
+  if (bracket === "Silver") return "Gold";
+  if (bracket === "Gold") return "Diamond";
+  if (bracket === "Diamond") return "Champ";
+  return null;
 }
 
 export async function analyzeUsername(
@@ -202,6 +219,7 @@ export async function analyzeUsername(
     }
   }
 
+  // Highest-level copy only
   const bestByCard = new Map<number, NormalizedCard>();
 
   for (const rawCard of rawCards) {
@@ -228,15 +246,6 @@ export async function analyzeUsername(
     return emptyResponse(username);
   }
 
-  const bracketScores: Record<Bracket, number> = {
-    Novice: 0,
-    Bronze: 0,
-    Silver: 0,
-    Gold: 0,
-    Diamond: 0,
-    Champ: 0,
-  };
-
   const diagnostics: AnalyzeResponse["diagnostics"] = {
     Novice: { usable: 0, scaled: 0, excluded: 0 },
     Bronze: { usable: 0, scaled: 0, excluded: 0 },
@@ -246,7 +255,16 @@ export async function analyzeUsername(
     Champ: { usable: 0, scaled: 0, excluded: 0 },
   };
 
-  const heatmapWeighted: Record<Splinter, Record<Bracket, number>> = {
+  const bracketScoresRaw: Record<Bracket, number> = {
+    Novice: 0,
+    Bronze: 0,
+    Silver: 0,
+    Gold: 0,
+    Diamond: 0,
+    Champ: 0,
+  };
+
+  const heatmapRaw: Record<Splinter, Record<Bracket, number>> = {
     fire: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
     water: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
     earth: { Novice: 0, Bronze: 0, Silver: 0, Gold: 0, Diamond: 0, Champ: 0 },
@@ -260,6 +278,7 @@ export async function analyzeUsername(
     for (const card of cards) {
       const rule = BRACKET_RULES[bracket][card.rarity];
 
+      // Underlevelled = excluded
       if (card.level < rule.min) {
         diagnostics[bracket].excluded += 1;
         continue;
@@ -274,68 +293,62 @@ export async function analyzeUsername(
         diagnostics[bracket].usable += 1;
       }
 
-      const normalizedContribution =
+      // Cards at top of the bracket score more.
+      // Scaled cards count as max-level in the bracket.
+      const normalizedBandScore =
         (effectiveLevel - rule.min + 1) / (rule.max - rule.min + 1);
 
-      const weightedContribution = isScaled
-        ? normalizedContribution * 0.35
-        : normalizedContribution * 1.0;
+      const weightedScore = normalizedBandScore * RARITY_WEIGHTS[card.rarity];
 
-      heatmapWeighted[card.splinter][bracket] += weightedContribution;
+      bracketScoresRaw[bracket] += weightedScore;
+      heatmapRaw[card.splinter][bracket] += weightedScore;
     }
-
-    const usable = diagnostics[bracket].usable;
-    const scaled = diagnostics[bracket].scaled;
-    const excluded = diagnostics[bracket].excluded;
-    const total = usable + scaled + excluded || 1;
-
-    const fitRatio = (usable + scaled * 0.35) / total;
-    const weightedCountScore = usable * 1.0 + scaled * 0.35 - excluded * 0.5;
-
-    const finalScore = weightedCountScore * 0.7 + fitRatio * 100 * 0.3;
-    bracketScores[bracket] = Math.max(0, Math.round(finalScore));
   }
+
+  const bracketScores: Record<Bracket, number> = {
+    Novice: Math.round(bracketScoresRaw.Novice),
+    Bronze: Math.round(bracketScoresRaw.Bronze),
+    Silver: Math.round(bracketScoresRaw.Silver),
+    Gold: Math.round(bracketScoresRaw.Gold),
+    Diamond: Math.round(bracketScoresRaw.Diamond),
+    Champ: Math.round(bracketScoresRaw.Champ),
+  };
 
   const bestBracket = BRACKET_ORDER.reduce((best, current) =>
     bracketScores[current] > bracketScores[best] ? current : best
   , "Bronze" as Bracket);
 
-  const bestDiagnostics = diagnostics[bestBracket];
-  const totalRelevant =
-    bestDiagnostics.usable +
-      bestDiagnostics.scaled +
-      bestDiagnostics.excluded || 1;
+  const bestScore = bracketScoresRaw[bestBracket];
+  const theoreticalMax = cards.reduce((sum, card) => {
+    return sum + RARITY_WEIGHTS[card.rarity];
+  }, 0);
 
   const confidence = Math.max(
     1,
     Math.min(
       99,
-      Math.round(
-        ((bestDiagnostics.usable + bestDiagnostics.scaled * 0.35) /
-          totalRelevant) *
-          100
-      )
+      Math.round((bestScore / Math.max(theoreticalMax, 1)) * 100)
     )
   );
 
   const heatmap = SPLINTER_ORDER.map((splinter) => ({
     splinter,
     scores: {
-      Novice: Math.round(heatmapWeighted[splinter].Novice),
-      Bronze: Math.round(heatmapWeighted[splinter].Bronze),
-      Silver: Math.round(heatmapWeighted[splinter].Silver),
-      Gold: Math.round(heatmapWeighted[splinter].Gold),
-      Diamond: Math.round(heatmapWeighted[splinter].Diamond),
-      Champ: Math.round(heatmapWeighted[splinter].Champ),
+      Novice: Math.round(heatmapRaw[splinter].Novice),
+      Bronze: Math.round(heatmapRaw[splinter].Bronze),
+      Silver: Math.round(heatmapRaw[splinter].Silver),
+      Gold: Math.round(heatmapRaw[splinter].Gold),
+      Diamond: Math.round(heatmapRaw[splinter].Diamond),
+      Champ: Math.round(heatmapRaw[splinter].Champ),
     },
   }));
 
   const splinterInsights = SPLINTER_ORDER
     .map((splinter) => {
-      const scores = heatmapWeighted[splinter];
-
       const bestSplinterBracket = BRACKET_ORDER.reduce((best, current) =>
-        scores[current] > scores[best] ? current : best
+        heatmapRaw[splinter][current] > heatmapRaw[splinter][best]
+          ? current
+          : best
       , "Bronze" as Bracket);
 
       const usableCards = cards.filter((card) => {
@@ -347,40 +360,29 @@ export async function analyzeUsername(
       return {
         splinter,
         bestBracket: bestSplinterBracket,
-        score: Math.round(scores[bestSplinterBracket]),
+        score: Math.round(heatmapRaw[splinter][bestSplinterBracket]),
         usableCards,
         summary:
           usableCards > 0
-            ? `${usableCards} cards can play in ${bestSplinterBracket}.`
+            ? `${usableCards} cards can play in ${bestSplinterBracket}, with stronger cards scoring higher inside that bracket.`
             : `No playable cards currently qualify for ${bestSplinterBracket}.`,
       };
     })
     .filter((item) => item.usableCards > 0)
     .sort((a, b) => b.score - a.score);
 
-  const nextBracket =
-    bestBracket === "Novice"
-      ? "Bronze"
-      : bestBracket === "Bronze"
-        ? "Silver"
-        : bestBracket === "Silver"
-          ? "Gold"
-          : bestBracket === "Gold"
-            ? "Diamond"
-            : bestBracket === "Diamond"
-              ? "Champ"
-              : null;
+  const nextBracket = getNextBracket(bestBracket);
 
   const recommendations = [
-    `Best current bracket by usable-card weighting: ${bestBracket}.`,
+    `Best current bracket by level-weighted card strength: ${bestBracket}.`,
     nextBracket
-      ? `${diagnostics[nextBracket].excluded} cards are currently below the minimum for ${nextBracket}.`
+      ? `${diagnostics[nextBracket].excluded} cards are still below the minimum for ${nextBracket}.`
       : "You are already at the highest bracket tier.",
-    diagnostics[bestBracket].scaled > diagnostics[bestBracket].usable
-      ? `You are somewhat overlevelled for ${bestBracket}; a higher bracket may suit your collection depth better soon.`
-      : `Your ${bestBracket} bracket has more naturally usable cards than scaled cards.`,
+    diagnostics[bestBracket].scaled > 0
+      ? `${diagnostics[bestBracket].scaled} of your cards are above the ${bestBracket} cap and are scoring as max-level cards in that bracket.`
+      : `Most of your ${bestBracket} cards are scoring based on their natural level within the bracket range.`,
     splinterInsights.length > 0
-      ? `${splinterInsights[0].splinter} is currently one of your stronger splinters.`
+      ? `${splinterInsights[0].splinter} is currently one of your stronger splinters for bracket play.`
       : "No splinter insights are available yet.",
   ];
 
@@ -388,47 +390,9 @@ export async function analyzeUsername(
     username,
     bestBracket,
     confidence,
-    bracketScores: {
-      Novice: Math.round(bracketScores.Novice),
-      Bronze: Math.round(bracketScores.Bronze),
-      Silver: Math.round(bracketScores.Silver),
-      Gold: Math.round(bracketScores.Gold),
-      Diamond: Math.round(bracketScores.Diamond),
-      Champ: Math.round(bracketScores.Champ),
-    },
+    bracketScores,
     heatmap,
-    diagnostics: {
-      Novice: {
-        usable: diagnostics.Novice.usable,
-        scaled: diagnostics.Novice.scaled,
-        excluded: diagnostics.Novice.excluded,
-      },
-      Bronze: {
-        usable: diagnostics.Bronze.usable,
-        scaled: diagnostics.Bronze.scaled,
-        excluded: diagnostics.Bronze.excluded,
-      },
-      Silver: {
-        usable: diagnostics.Silver.usable,
-        scaled: diagnostics.Silver.scaled,
-        excluded: diagnostics.Silver.excluded,
-      },
-      Gold: {
-        usable: diagnostics.Gold.usable,
-        scaled: diagnostics.Gold.scaled,
-        excluded: diagnostics.Gold.excluded,
-      },
-      Diamond: {
-        usable: diagnostics.Diamond.usable,
-        scaled: diagnostics.Diamond.scaled,
-        excluded: diagnostics.Diamond.excluded,
-      },
-      Champ: {
-        usable: diagnostics.Champ.usable,
-        scaled: diagnostics.Champ.scaled,
-        excluded: diagnostics.Champ.excluded,
-      },
-    },
+    diagnostics,
     splinterInsights,
     recommendations,
   };
