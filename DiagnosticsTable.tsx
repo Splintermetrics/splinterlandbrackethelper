@@ -1,15 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  color-scheme: dark;
+export default function DiagnosticsTable() {
+  return (
+    <div>
+      <p>Diagnostics table coming soon</p>
+    </div>
+  );
 }
 
-body {
-  @apply bg-slate-950 text-slate-100;
-}
-
-* {
-  box-sizing: border-box;
-}
