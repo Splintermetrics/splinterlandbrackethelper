@@ -7,3 +7,12 @@ export type Bracket =
   | "Champ";
 
 export type Rarity = "common" | "rare" | "epic" | "legendary";
+
+export type Splinter =
+  | "fire"
+  | "water"
+  | "earth"
+  | "life"
+  | "death"
+  | "dragon"
+  | "neutral";
