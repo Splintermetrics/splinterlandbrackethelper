@@ -16,3 +16,15 @@ export type Splinter =
   | "death"
   | "dragon"
   | "neutral";
+
+export type LevelBand = {
+  min: number;
+  max: number;
+};
+
+export type BracketRule = {
+  common: LevelBand;
+  rare: LevelBand;
+  epic: LevelBand;
+  legendary: LevelBand;
+};
